@@ -1,57 +1,106 @@
+# ============================================================
+# AI Novel-to-Script Schema  v1.2.0
+# 本 Schema 定义了小说→剧本转换工具的输出数据格式
+# 前后端以本文件为数据契约
+# ============================================================
+
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: "AI Novel-to-Script Schema"
-version: "1.1.0" 
+version: "1.2.0"
 
 type: object
 required: ["meta", "characters", "scenes"]
 additionalProperties: false
 
+# ============================================================
+# 顶层字段
+# ============================================================
 properties:
+
+  # ----------------------------------------------------------
+  # meta — 剧本元信息
+  # ----------------------------------------------------------
   meta:
     type: object
-    required: ["novel_title", "adapted_range"]
+    required:
+      - novel_title
+      - script_title
+      - adapted_range
     properties:
+
       novel_title:
         type: string
+        description: "原著小说名称"
+
+      script_title:
+        type: string
+        description: |
+          改编后剧本的独立标题。
+          默认等于 novel_title，但作者可以自定义。
+          例如原著名为《剑影》，剧本可命名为《剑影（舞台剧改编版）》。
+
       adapted_range:
         type: string
-        description: "最终改编的章节范围（由系统总结）"
-        examples: ["第3章 - 第8章"]
-      
-     #用户输入指令，控制章节，选择基调等
+        description: "最终改编的章节范围（由系统根据输入自动总结）"
+        examples:
+          - "第3章 - 第8章"
+          - "第1章 初入江湖 - 第15章 血战"
+
+      # --- 用户输入指令 ---
       user_instructions:
         type: object
-        description: "用户在前端输入的个性化改编指令"
+        description: "用户在前端输入的个性化改编指令，用于指导 AI 转换行为"
         properties:
           selected_chapters:
             type: array
-            items: { type: string }
-            description: "用户具体选了哪几章"
-            examples: [["第3章 初遇", "第4章 离别"]]
+            description: "用户具体选择了哪些章节（原始章节名）"
+            items:
+              type: string
+            examples:
+              - ["第3章 初遇", "第4章 离别", "第5章 重逢"]
+
           tone:
             type: string
-            description: "用户期望的剧本基调"
-            enum: ["正剧", "喜剧", "悲剧", "悬疑"]
+            description: |
+              用户期望的剧本基调。前端可提供推荐列表，但允许用户自由输入。
+              推荐值：正剧、喜剧、悲剧、悬疑、爱情、科幻、武侠、奇幻、
+              惊悚、恐怖、历史、战争、都市、青春
+            examples:
+              - "悬疑"
+              - "正剧"
+
           focus_characters:
             type: array
-            items: { type: string }
-            description: "用户希望重点刻画的人物"
+            description: "用户希望重点刻画的人物名称（对应原著角色名）"
+            items:
+              type: string
+
           custom_prompt:
             type: string
-            description: "用户自由输入的额外要求"
-            examples: ["把打斗场面写得更加激烈，增加男主角的心理活动。"]
-  
-      
+            description: "用户自由输入的额外改编要求，将直接注入 AI prompt"
+            examples:
+              - "把打斗场面写得更加激烈，增加男主角的心理活动。"
+              - "压缩支线剧情，聚焦主线，每场戏控制在3分钟内。"
+
       generated_at:
         type: string
         format: "date-time"
-      ai_confidence:
-        type: number
-        minimum: 0
-        maximum: 1
+        description: "剧本生成时间（ISO 8601 格式）"
+
+      schema_version:
+        type: string
+        description: "生成时使用的 Schema 版本号，用于向前兼容"
+        examples:
+          - "1.2.0"
+
+  # ----------------------------------------------------------
+  # characters — 全剧角色库（去重合并）
+  # ----------------------------------------------------------
   characters:
     type: array
-    description: "全剧角色库（去重合并）"
+    description: |
+      全剧所有登场角色的统一定义，由 AI 在解析小说后去重合并生成。
+      每个角色分配全局唯一 ID，剧本正文中通过 ID 引用角色。
     items:
       type: object
       required: ["id", "name"]
@@ -59,56 +108,156 @@ properties:
         id:
           type: string
           pattern: "^CHAR_[A-Z0-9_]+$"
-          description: "角色唯一标识"
+          description: |
+            角色唯一标识符，全局不可重复。
+            格式：CHAR_ 前缀 + 角色名大写拼音/英文，空格以 _ 替代。
+          examples:
+            - "CHAR_LIN_MO"
+            - "CHAR_SU_WAN"
+
         name:
           type: string
+          description: "角色在原著中的姓名"
+
         role_type:
           type: string
           enum: ["主角", "配角", "龙套"]
+          description: "角色在剧本中的重要程度"
+
         traits:
           type: array
-          items: { type: string }
+          description: "角色性格特征标签，用于 AI 生成对白时保持一致的语气"
+          items:
+            type: string
+          examples:
+            - ["冷静", "腹黑", "武艺高强"]
+            - ["天真", "善良", "医术精湛"]
 
+        physical_description:
+          type: string
+          description: "角色外貌描述，辅助场景造型参考（可选）"
+
+        aliases:
+          type: array
+          description: "角色在原著中的其他称呼（绰号、化名等），用于 AI 实体识别"
+          items:
+            type: string
+
+  # ----------------------------------------------------------
+  # scenes — 线性剧本正文
+  # ----------------------------------------------------------
   scenes:
     type: array
-    description: "线性剧本场景"
+    description: |
+      剧本正文，以场景为基本单位按时间线性排列。
+      每个场景包含一个或多个内容块。
     items:
       type: object
-      required: ["scene_id", "location", "content"]
+      required: ["scene_id", "scene_number", "location", "content"]
       properties:
+
         scene_id:
           type: string
           pattern: "^S[0-9]{4}$"
-          #意思是S之后的4位数字在0-9之间，比如S0001
-          description: "全局场景编号"
+          description: |
+            全局唯一场景编号，格式为 S 后接 4 位数字（不足补零）。
+            该编号全局不重复，可用于排练时快速定位。
+          examples:
+            - "S0001"
+            - "S0012"
+
+        scene_number:
+          type: integer
+          minimum: 1
+          description: |
+            场景在剧本中的播放序号（从 1 开始递增）。
+            与 scene_id 不同，scene_number 表示播放顺序。
+            如果编辑时插入/删除/移动场景，需重新编号。
+
         chapter_origin:
           type: string
-          description: "源自原著章节"
+          description: "该场景改编自原著的哪个章节"
+
         location:
           type: string
-          examples: ["内景 王府书房", "外景 校场"]
+          description: "场景地点标识，建议遵循行业惯例标注内外景"
+          examples:
+            - "内景 王府书房 — 日"
+            - "外景 校场 — 夜"
+            - "内/外景 城门 — 傍晚"
+
         time:
           type: string
-          enum: ["清晨", "上午", "下午", "傍晚", "夜晚"]
+          description: "场景发生的大致时段"
+          enum: ["清晨", "上午", "下午", "傍晚", "夜晚", "深夜", "黎明"]
+
         characters_present:
           type: array
-          items: { type: string }
+          description: "本场景出场的角色 ID 列表，必须引用 characters 中已定义的 id"
+          items:
+            type: string
+            pattern: "^CHAR_[A-Z0-9_]+$"
+          examples:
+            - ["CHAR_LIN_MO", "CHAR_SU_WAN"]
+
         content:
           type: array
-          description: "剧本内容流"
+          description: |
+            场景内容流，按时间顺序排列的内容块。
+            每个块是不同类型的最小剧本单元。
           items:
             type: object
-            required: ["type"]
+            required: ["type", "text"]
             properties:
+
               type:
                 type: string
-                enum: ["action", "dialogue", "sound", "note"]
+                enum:
+                  - "action"       # 动作 / 舞台指示
+                  - "dialogue"     # 角色对白
+                  - "voiceover"    # 旁白 / 内心独白 / 画外音
+                  - "transition"   # 转场效果（FADE IN, CUT TO 等）
+                  - "sound"        # 音效提示
+                  - "note"         # 编剧注释（不参与演出）
+                description: "内容块类型"
+
               text:
                 type: string
-                description: "动作描述或台词"
+                description: |
+                  内容正文。按 type 语义不同：
+                  - action: 动作描述或舞台指示
+                  - dialogue: 角色台词
+                  - voiceover: 旁白、内心独白或画外音内容
+                  - transition: 转场效果描述（如"淡入"、"切至下一场"）
+                  - sound: 音效说明（如"远处传来马蹄声"）
+                  - note: 编剧备注（仅供编辑参考，不出现在最终剧本中）
+
               speaker_id:
                 type: string
-                description: "仅对话类型需要"
+                pattern: "^CHAR_[A-Z0-9_]+$"
+                description: |
+                  说话人的 characters.id。
+                  - dialogue 类型：必填
+                  - voiceover 类型：可选（有特定叙述者时填写）
+                  - 其他类型：不填
+
               emotion:
                 type: string
-                description: "情绪标签"
+                description: |
+                  台词的情绪标签，用于指导演员表演。
+                  主要用在 dialogue 和 voiceover 类型。
+                examples:
+                  - "愤怒"
+                  - "平静中带着杀气"
+                  - "欣喜若狂"
+
+              ai_confidence:
+                type: number
+                minimum: 0
+                maximum: 1
+                description: |
+                  AI 对该内容块的生成置信度（0=完全不确定，1=高度可信）。
+                  数值较低的内容块建议作者重点审核修改。
+                examples:
+                  - 0.92
+                  - 0.45
