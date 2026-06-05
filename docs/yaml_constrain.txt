@@ -1,0 +1,5 @@
+本Schema设计旨在解决小说转剧本过程中的数据结构化与人机协作问题。
+通过additionalProperties:false强制锁定数据结构，防止AI生成冗余字段导致前端崩溃。
+引入user_instructions对象，利用selected_chapters与custom_prompt字段承接前端用户的灵活指令，同时用tone枚举规范输出风格，平衡创意与可控性。
+角色ID采用CHAR_前缀配合正则校验，确保跨章节实体去重与前端精准索引。场景编号设定为S0001格式保障排序稳定性，时间字段限制为标准枚举以便拍摄规划。
+内容流通过action、dialogue等类型拆分，使前端能直接映射不同UI组件，无需复杂文本解析，大幅提升渲染效率。
