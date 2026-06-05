@@ -1,0 +1,114 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: "AI Novel-to-Script Schema"
+version: "1.1.0" 
+
+type: object
+required: ["meta", "characters", "scenes"]
+additionalProperties: false
+
+properties:
+  meta:
+    type: object
+    required: ["novel_title", "adapted_range"]
+    properties:
+      novel_title:
+        type: string
+      adapted_range:
+        type: string
+        description: "最终改编的章节范围（由系统总结）"
+        examples: ["第3章 - 第8章"]
+      
+     #用户输入指令，控制章节，选择基调等
+      user_instructions:
+        type: object
+        description: "用户在前端输入的个性化改编指令"
+        properties:
+          selected_chapters:
+            type: array
+            items: { type: string }
+            description: "用户具体选了哪几章"
+            examples: [["第3章 初遇", "第4章 离别"]]
+          tone:
+            type: string
+            description: "用户期望的剧本基调"
+            enum: ["正剧", "喜剧", "悲剧", "悬疑"]
+          focus_characters:
+            type: array
+            items: { type: string }
+            description: "用户希望重点刻画的人物"
+          custom_prompt:
+            type: string
+            description: "用户自由输入的额外要求"
+            examples: ["把打斗场面写得更加激烈，增加男主角的心理活动。"]
+  
+      
+      generated_at:
+        type: string
+        format: "date-time"
+      ai_confidence:
+        type: number
+        minimum: 0
+        maximum: 1
+  characters:
+    type: array
+    description: "全剧角色库（去重合并）"
+    items:
+      type: object
+      required: ["id", "name"]
+      properties:
+        id:
+          type: string
+          pattern: "^CHAR_[A-Z0-9_]+$"
+          description: "角色唯一标识"
+        name:
+          type: string
+        role_type:
+          type: string
+          enum: ["主角", "配角", "龙套"]
+        traits:
+          type: array
+          items: { type: string }
+
+  scenes:
+    type: array
+    description: "线性剧本场景"
+    items:
+      type: object
+      required: ["scene_id", "location", "content"]
+      properties:
+        scene_id:
+          type: string
+          pattern: "^S[0-9]{4}$"
+          #意思是S之后的4位数字在0-9之间，比如S0001
+          description: "全局场景编号"
+        chapter_origin:
+          type: string
+          description: "源自原著章节"
+        location:
+          type: string
+          examples: ["内景 王府书房", "外景 校场"]
+        time:
+          type: string
+          enum: ["清晨", "上午", "下午", "傍晚", "夜晚"]
+        characters_present:
+          type: array
+          items: { type: string }
+        content:
+          type: array
+          description: "剧本内容流"
+          items:
+            type: object
+            required: ["type"]
+            properties:
+              type:
+                type: string
+                enum: ["action", "dialogue", "sound", "note"]
+              text:
+                type: string
+                description: "动作描述或台词"
+              speaker_id:
+                type: string
+                description: "仅对话类型需要"
+              emotion:
+                type: string
+                description: "情绪标签"
