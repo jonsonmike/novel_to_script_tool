@@ -23,6 +23,7 @@ import yaml
 
 from . import llm_client
 from .prompts import extraction, splitting, generation, assembly
+from ..models.script import ScriptOutput
 
 
 def _safe_fmt(text: str) -> str:
@@ -187,6 +188,17 @@ def run_pipeline(
     script_dict.setdefault("meta", meta)
     script_dict.setdefault("characters", characters)
     script_dict.setdefault("scenes", scenes)
+
+    _pct(95, "正在校验剧本格式…")
+
+    # ── Pydantic 校验 ───────────────────────────────────
+    try:
+        validated = ScriptOutput(**script_dict)
+        script_dict = validated.model_dump()
+    except Exception as exc:
+        # 校验失败时仍返回原始数据，但记录错误
+        import sys
+        print(f"[WARNING] Pipeline 输出校验未通过: {exc}", file=sys.stderr)
 
     _pct(100, "剧本生成完成")
 

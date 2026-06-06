@@ -209,16 +209,16 @@ def save_script(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    # 基本校验：必须包含顶层三字段
-    required = ["meta", "characters", "scenes"]
-    missing = [k for k in required if k not in payload]
-    if missing:
+    # Pydantic 完整校验（格式、角色引用、必填字段）
+    from ..models.script import ScriptOutput
+    try:
+        validated = ScriptOutput(**payload)
+        storage.save_script(project_id, validated.model_dump())
+    except Exception as exc:
         raise HTTPException(
             status_code=422,
-            detail=f"剧本数据缺少必填字段: {', '.join(missing)}",
-        )
-
-    storage.save_script(project_id, payload)
+            detail=f"剧本数据格式错误: {exc}",
+        ) from exc
     return {"status": "ok", "message": "剧本已保存"}
 
 
