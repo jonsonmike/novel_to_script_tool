@@ -247,3 +247,23 @@ class TestExport:
         pid = create_test_project()
         resp = client.get(f"/api/projects/{pid}/export")
         assert resp.status_code == 404
+
+
+class TestDeleteProject:
+    """DELETE /api/projects/{project_id}"""
+
+    def test_delete_success(self):
+        pid = create_test_project()
+        resp = client.delete(f"/api/projects/{pid}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+    def test_delete_not_found(self):
+        resp = client.delete("/api/projects/nonexistent")
+        assert resp.status_code == 404
+
+    def test_delete_then_get_404(self):
+        pid = create_test_project()
+        client.delete(f"/api/projects/{pid}")
+        resp = client.get(f"/api/projects/{pid}")
+        assert resp.status_code == 404
