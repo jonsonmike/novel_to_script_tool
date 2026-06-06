@@ -15,12 +15,14 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import yaml
 from fastapi import APIRouter, HTTPException, Query
 
 from ..core import storage
+from ..pipeline.orchestrator import run_pipeline
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -110,13 +112,47 @@ def trigger_convert(project_id: str) -> dict[str, Any]:
     if task is None:
         raise HTTPException(status_code=500, detail="创建任务失败")
 
-    # ── 占位：后续接入 AI Pipeline ─────────────────────────
-    # TODO: 在这里启动后台异步转换任务
-    # 目前仅标记任务为 pending，前端轮询时会看到进度
+    task_id = task["task_id"]
+
+    # ── 启动后台异步转换 ────────────────────────────────────
+    def _run_conversion() -> None:
+        """在后台线程中执行 AI Pipeline"""
+        try:
+            def on_progress(progress: int, message: str) -> None:
+                storage.update_task(project_id, task_id, {
+                    "status": "running",
+                    "progress": progress,
+                })
+
+            storage.update_task(project_id, task_id, {"status": "running"})
+
+            result = run_pipeline(
+                novel_text=project["novel_text"],
+                novel_title=project["novel_title"],
+                user_instructions=project.get("user_instructions", {}),
+                on_progress=on_progress,
+            )
+
+            storage.save_script(project_id, result.script)
+            storage.update_task(project_id, task_id, {
+                "status": "completed",
+                "progress": 100,
+                "completed_at": result.script.get("meta", {}).get("generated_at", ""),
+            })
+
+        except Exception as exc:
+            storage.update_task(project_id, task_id, {
+                "status": "failed",
+                "error": str(exc),
+            })
+            storage.update_project(project_id, {"status": "draft"})
+
+    thread = threading.Thread(target=_run_conversion, daemon=True)
+    thread.start()
     # ────────────────────────────────────────────────────────
 
     return {
-        "task_id": task["task_id"],
+        "task_id": task_id,
         "status": task["status"],
         "message": "转换任务已提交，请轮询 GET /api/projects/{id}/tasks/{task_id} 查询进度",
     }

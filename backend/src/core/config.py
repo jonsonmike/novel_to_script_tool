@@ -1,9 +1,17 @@
 """
 应用配置
+
+环境变量优先级：系统环境变量 > .env 文件 > 默认值
 """
 
 import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# 加载 .env 文件（项目根目录）
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(_ENV_FILE)
 
 
 class Settings:

@@ -137,8 +137,8 @@ class TestQueryTask:
         assert resp.status_code == 200
         data = resp.json()
         assert data["task_id"] == task_id
-        assert data["status"] == "pending"
-        assert data["progress"] == 0
+        assert data["status"] in ("pending", "running")
+        assert data["progress"] >= 0
 
     def test_query_nonexistent_task(self):
         pid = create_test_project()
