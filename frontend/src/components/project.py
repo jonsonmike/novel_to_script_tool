@@ -140,6 +140,7 @@ def render_project_list() -> None:
             with cols[2]:
                 if st.button("📂 打开", key=f"open_{pid}"):
                     st.session_state["current_project_id"] = pid
+                    st.session_state["current_page"] = "convert"
                     st.rerun()
             with cols[3]:
                 if st.button("🗑️ 删除", key=f"del_{pid}"):
