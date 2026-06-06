@@ -1,0 +1,14 @@
+# AI Novel-to-Script Frontend Dependencies
+# Python 3.9+
+
+# Web UI Framework
+streamlit==1.41.0
+
+# HTTP Client — calls backend API
+requests==2.32.0
+
+# YAML support
+pyyaml==6.0
+
+# Streamlit extras (optional but recommended)
+streamlit-ace==0.1.1     # code editor widget
