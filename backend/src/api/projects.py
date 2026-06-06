@@ -122,9 +122,10 @@ def trigger_convert(project_id: str) -> dict[str, Any]:
                 storage.update_task(project_id, task_id, {
                     "status": "running",
                     "progress": progress,
+                    "message": message,
                 })
 
-            storage.update_task(project_id, task_id, {"status": "running"})
+            storage.update_task(project_id, task_id, {"status": "running", "message": "正在初始化…"})
 
             result = run_pipeline(
                 novel_text=project["novel_text"],

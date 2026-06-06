@@ -156,6 +156,7 @@ def create_task(project_id: str) -> dict | None:
             "task_id": task_id,
             "status": "pending",   # pending → running → completed / failed
             "progress": 0,         # 0–100
+            "message": "",         # 当前阶段描述
             "created_at": _now_iso(),
             "completed_at": None,
             "error": None,
