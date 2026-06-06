@@ -1,0 +1,210 @@
+"""
+项目管理 API 路由
+
+端点：
+- POST   /api/projects                       创建项目
+- GET    /api/projects                       项目列表
+- GET    /api/projects/{project_id}          项目详情
+- POST   /api/projects/{project_id}/convert  触发 AI 转换
+- GET    /api/projects/{project_id}/tasks/{task_id}  查询进度
+- GET    /api/projects/{project_id}/script   获取剧本
+- PUT    /api/projects/{project_id}/script   保存剧本
+- GET    /api/projects/{project_id}/export   导出剧本
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import yaml
+from fastapi import APIRouter, HTTPException, Query
+
+from ..core import storage
+
+router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+
+# ═══════════════════════════════════════════════════════════
+# 请求 / 响应模型（简单 dict，后续可用 Pydantic 强类型化）
+# ═══════════════════════════════════════════════════════════
+
+# ── POST /api/projects ───────────────────────────────────
+
+@router.post("", status_code=201)
+def create_project(payload: dict[str, Any]) -> dict[str, Any]:
+    """创建新项目，接收小说正文和改编参数"""
+    novel_title = payload.get("novel_title", "").strip()
+    novel_text = payload.get("novel_text", "").strip()
+    user_instructions = payload.get("user_instructions", {})
+
+    if not novel_text:
+        raise HTTPException(status_code=422, detail="novel_text 不能为空")
+
+    project = storage.create_project(
+        novel_title=novel_title or "未命名项目",
+        novel_text=novel_text,
+        user_instructions=user_instructions,
+    )
+
+    # 返回精简信息（不含小说全文，避免前端数据过大）
+    return {
+        "project_id": project["project_id"],
+        "novel_title": project["novel_title"],
+        "status": project["status"],
+        "created_at": project["created_at"],
+    }
+
+
+# ── GET /api/projects ────────────────────────────────────
+
+@router.get("")
+def list_projects() -> list[dict[str, Any]]:
+    """列出所有项目（摘要信息，不含小说全文和剧本数据）"""
+    projects = storage.list_projects()
+    return [
+        {
+            "project_id": p["project_id"],
+            "novel_title": p["novel_title"],
+            "status": p["status"],
+            "created_at": p["created_at"],
+        }
+        for p in projects
+    ]
+
+
+# ── GET /api/projects/{project_id} ───────────────────────
+
+@router.get("/{project_id}")
+def get_project(project_id: str) -> dict[str, Any]:
+    """获取项目详情（含小说全文和用户指令）"""
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return project
+
+
+# ── POST /api/projects/{project_id}/convert ──────────────
+
+@router.post("/{project_id}/convert", status_code=202)
+def trigger_convert(project_id: str) -> dict[str, Any]:
+    """触发 AI 小说→剧本转换（异步）"""
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    task = storage.create_task(project_id)
+    if task is None:
+        raise HTTPException(status_code=500, detail="创建任务失败")
+
+    # ── 占位：后续接入 AI Pipeline ─────────────────────────
+    # TODO: 在这里启动后台异步转换任务
+    # 目前仅标记任务为 pending，前端轮询时会看到进度
+    # ────────────────────────────────────────────────────────
+
+    return {
+        "task_id": task["task_id"],
+        "status": task["status"],
+        "message": "转换任务已提交，请轮询 GET /api/projects/{id}/tasks/{task_id} 查询进度",
+    }
+
+
+# ── GET /api/projects/{project_id}/tasks/{task_id} ───────
+
+@router.get("/{project_id}/tasks/{task_id}")
+def query_task(project_id: str, task_id: str) -> dict[str, Any]:
+    """查询 AI 转换任务的进度"""
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    task = storage.get_task(project_id, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    return {
+        "task_id": task["task_id"],
+        "status": task["status"],
+        "progress": task["progress"],
+        "created_at": task["created_at"],
+        "completed_at": task.get("completed_at"),
+        "error": task.get("error"),
+    }
+
+
+# ── GET /api/projects/{project_id}/script ────────────────
+
+@router.get("/{project_id}/script")
+def get_script(project_id: str) -> dict[str, Any]:
+    """获取项目的完整剧本数据"""
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    script = project.get("script")
+    if script is None:
+        raise HTTPException(status_code=404, detail="尚未生成剧本，请先触发 AI 转换")
+
+    return script
+
+
+# ── PUT /api/projects/{project_id}/script ────────────────
+
+@router.put("/{project_id}/script")
+def save_script(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    保存用户编辑后的剧本。
+    接收完整的剧本数据（meta + characters + scenes）。
+    """
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 基本校验：必须包含顶层三字段
+    required = ["meta", "characters", "scenes"]
+    missing = [k for k in required if k not in payload]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"剧本数据缺少必填字段: {', '.join(missing)}",
+        )
+
+    storage.save_script(project_id, payload)
+    return {"status": "ok", "message": "剧本已保存"}
+
+
+# ── GET /api/projects/{project_id}/export ────────────────
+
+@router.get("/{project_id}/export")
+def export_script(
+    project_id: str,
+    format: str = Query("yaml", description="导出格式：yaml 或 json"),
+) -> Any:
+    """导出剧本为 YAML 或 JSON 格式"""
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    script = project.get("script")
+    if script is None:
+        raise HTTPException(status_code=404, detail="尚未生成剧本")
+
+    from fastapi.responses import PlainTextResponse
+
+    if format == "json":
+        import json
+        return PlainTextResponse(
+            json.dumps(script, ensure_ascii=False, indent=2),
+            media_type="application/json",
+        )
+    else:
+        yaml_text = yaml.dump(
+            script,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+            width=120,
+        )
+        return PlainTextResponse(
+            yaml_text,
+            media_type="application/x-yaml",
+        )
