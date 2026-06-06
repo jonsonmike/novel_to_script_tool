@@ -5,6 +5,7 @@
 - POST   /api/projects                       创建项目
 - GET    /api/projects                       项目列表
 - GET    /api/projects/{project_id}          项目详情
+- DELETE /api/projects/{project_id}          删除项目
 - POST   /api/projects/{project_id}/convert  触发 AI 转换
 - GET    /api/projects/{project_id}/tasks/{task_id}  查询进度
 - GET    /api/projects/{project_id}/script   获取剧本
@@ -81,6 +82,19 @@ def get_project(project_id: str) -> dict[str, Any]:
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     return project
+
+
+# ── DELETE /api/projects/{project_id} ─────────────────────
+
+@router.delete("/{project_id}")
+def delete_project(project_id: str) -> dict[str, str]:
+    """删除项目及其所有关联数据"""
+    project = storage.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    storage.delete_project(project_id)
+    return {"status": "ok", "message": f"项目 {project_id} 已删除"}
 
 
 # ── POST /api/projects/{project_id}/convert ──────────────
