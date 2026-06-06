@@ -101,8 +101,8 @@ def render_create_project() -> None:
 
         if ok and data:
             st.session_state["current_project_id"] = data.get("project_id", "")
+            st.session_state["current_page"] = "convert"
             st.success(f"✅ 项目创建成功！ID: {data.get('project_id', 'N/A')}")
-            st.info("项目已创建，可在「转换管理」页面触发 AI 转换。")
             st.rerun()
         else:
             st.error(f"创建失败：{err}")
