@@ -14,6 +14,7 @@ AI 转换流水线编排器
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,6 +25,8 @@ import yaml
 from . import llm_client
 from .prompts import extraction, splitting, generation, assembly
 from ..models.script import ScriptOutput
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_fmt(text: str) -> str:
@@ -200,8 +203,7 @@ def run_pipeline(
         script_dict = validated.model_dump()
     except Exception as exc:
         # 校验失败时仍返回原始数据，但记录错误
-        import sys
-        print(f"[WARNING] Pipeline 输出校验未通过: {exc}", file=sys.stderr)
+        logger.warning("Pipeline 输出校验未通过: %s", exc)
 
     _pct(100, "剧本生成完成")
 
