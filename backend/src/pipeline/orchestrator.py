@@ -315,16 +315,31 @@ def _find_relevant_excerpt(
 
 
 def _generate_char_id(name: str) -> str:
-    """用中文名生成合法角色 ID"""
+    """用中文名生成合法角色 ID（符合 ^CHAR_[A-Z0-9_]+$ 格式）"""
     import unicodedata
-    # 用 Unicode 规范化 + 大写拼音首字母作为后备
-    normalized = unicodedata.normalize("NFKD", name)
-    ascii_part = normalized.encode("ascii", "ignore").decode("ascii")
-    if ascii_part:
+
+    clean = name.strip()
+
+    # 1. 尝试提取已有的 ASCII 字符（英文名、拼音等）
+    normalized = unicodedata.normalize("NFKD", clean)
+    ascii_part = normalized.encode("ascii", "ignore").decode("ascii").strip()
+    if ascii_part and len(ascii_part) >= 2:
         return f"CHAR_{ascii_part.upper().replace(' ', '_')}"
-    # 纯中文名 → 用笔画数作为后缀
-    stroke = sum(ord(c) for c in name) % 10000
-    return f"CHAR_Z{stroke:04d}"
+
+    # 2. 纯中文名：用 Unicode 码位映射到字母，生成可读的短 ID
+    #    每个中文字符映射为 A-Z 的一个字母
+    letters = []
+    for ch in clean:
+        if "一" <= ch <= "鿿":
+            letters.append(chr(ord("A") + (ord(ch) % 26)))
+        elif ch.isascii() and ch.isalpha():
+            letters.append(ch.upper())
+
+    if letters:
+        return f"CHAR_{''.join(letters[:6])}"
+
+    # 3. 绝对兜底（名字全为空或无法识别）
+    return f"CHAR_UNKNOWN_{abs(hash(clean)) % 10000:04d}"
 
 
 def _clean_yaml(yaml_text: str) -> str:
