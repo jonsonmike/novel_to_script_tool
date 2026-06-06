@@ -25,6 +25,11 @@ from . import llm_client
 from .prompts import extraction, splitting, generation, assembly
 
 
+def _safe_fmt(text: str) -> str:
+    """转义花括号，防止用户输入中的 {} 被 str.format() 当作占位符"""
+    return text.replace("{", "{{").replace("}", "}}")
+
+
 # ── 进度回调类型 ──────────────────────────────────────────
 ProgressCallback = Callable[[int, str], None]
 # (progress: 0-100, message: str)
@@ -71,8 +76,8 @@ def run_pipeline(
     # ── 阶段 1: 角色提取 ──────────────────────────────────
     _pct(5, "正在提取角色信息…")
     user_prompt_1 = extraction.USER_PROMPT_TEMPLATE.format(
-        novel_text=novel_text,
-        user_instructions=instructions_str,
+        novel_text=_safe_fmt(novel_text),
+        user_instructions=_safe_fmt(instructions_str),
     )
     characters_data = llm_client.chat_json(
         extraction.SYSTEM_PROMPT,
@@ -92,9 +97,9 @@ def run_pipeline(
     # ── 阶段 2: 场景拆分 ──────────────────────────────────
     _pct(30, "正在拆分场景…")
     user_prompt_2 = splitting.USER_PROMPT_TEMPLATE.format(
-        novel_text=novel_text,
-        characters_json=json.dumps(characters, ensure_ascii=False, indent=2),
-        user_instructions=instructions_str,
+        novel_text=_safe_fmt(novel_text),
+        characters_json=_safe_fmt(json.dumps(characters, ensure_ascii=False, indent=2)),
+        user_instructions=_safe_fmt(instructions_str),
     )
     scenes_data = llm_client.chat_json(
         splitting.SYSTEM_PROMPT,
@@ -127,10 +132,10 @@ def run_pipeline(
         }, ensure_ascii=False, indent=2)
 
         user_prompt_3 = generation.USER_PROMPT_TEMPLATE.format(
-            novel_excerpt=novel_excerpt,
-            scene_info=scene_info,
-            characters_json=json.dumps(characters, ensure_ascii=False, indent=2),
-            user_instructions=instructions_str,
+            novel_excerpt=_safe_fmt(novel_excerpt),
+            scene_info=_safe_fmt(scene_info),
+            characters_json=_safe_fmt(json.dumps(characters, ensure_ascii=False, indent=2)),
+            user_instructions=_safe_fmt(instructions_str),
         )
         content_data = llm_client.chat_json(
             generation.SYSTEM_PROMPT,
@@ -153,9 +158,9 @@ def run_pipeline(
     # ── 阶段 4: 格式组装 ──────────────────────────────────
     meta = _build_meta(novel_title, novel_text, instructions)
     user_prompt_4 = assembly.USER_PROMPT_TEMPLATE.format(
-        meta_json=json.dumps(meta, ensure_ascii=False, indent=2),
-        characters_json=json.dumps(characters, ensure_ascii=False, indent=2),
-        scenes_json=json.dumps(scenes, ensure_ascii=False, indent=2),
+        meta_json=_safe_fmt(json.dumps(meta, ensure_ascii=False, indent=2)),
+        characters_json=_safe_fmt(json.dumps(characters, ensure_ascii=False, indent=2)),
+        scenes_json=_safe_fmt(json.dumps(scenes, ensure_ascii=False, indent=2)),
     )
     yaml_text = llm_client.chat(
         assembly.SYSTEM_PROMPT,
