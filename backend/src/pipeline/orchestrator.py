@@ -184,10 +184,13 @@ def run_pipeline(
             "scenes": scenes,
         }
 
-    # 确保顶层字段完整
-    script_dict.setdefault("meta", meta)
-    script_dict.setdefault("characters", characters)
-    script_dict.setdefault("scenes", scenes)
+    # 以代码组装的数据为准（assembly 阶段的 YAML 可能被 LLM 修改）
+    if isinstance(script_dict, dict):
+        script_dict["meta"] = meta
+        script_dict["characters"] = characters
+        script_dict["scenes"] = scenes
+    else:
+        script_dict = {"meta": meta, "characters": characters, "scenes": scenes}
 
     _pct(95, "正在校验剧本格式…")
 
