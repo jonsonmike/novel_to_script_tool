@@ -23,6 +23,12 @@ import yaml
 
 from . import llm_client
 from .prompts import extraction, splitting, generation, assembly
+from ..models.script import ScriptOutput
+
+
+def _safe_fmt(text: str) -> str:
+    """转义花括号，防止用户输入中的 {} 被 str.format() 当作占位符"""
+    return text.replace("{", "{{").replace("}", "}}")
 
 
 # ── 进度回调类型 ──────────────────────────────────────────
@@ -71,8 +77,8 @@ def run_pipeline(
     # ── 阶段 1: 角色提取 ──────────────────────────────────
     _pct(5, "正在提取角色信息…")
     user_prompt_1 = extraction.USER_PROMPT_TEMPLATE.format(
-        novel_text=novel_text,
-        user_instructions=instructions_str,
+        novel_text=_safe_fmt(novel_text),
+        user_instructions=_safe_fmt(instructions_str),
     )
     characters_data = llm_client.chat_json(
         extraction.SYSTEM_PROMPT,
@@ -92,9 +98,9 @@ def run_pipeline(
     # ── 阶段 2: 场景拆分 ──────────────────────────────────
     _pct(30, "正在拆分场景…")
     user_prompt_2 = splitting.USER_PROMPT_TEMPLATE.format(
-        novel_text=novel_text,
-        characters_json=json.dumps(characters, ensure_ascii=False, indent=2),
-        user_instructions=instructions_str,
+        novel_text=_safe_fmt(novel_text),
+        characters_json=_safe_fmt(json.dumps(characters, ensure_ascii=False, indent=2)),
+        user_instructions=_safe_fmt(instructions_str),
     )
     scenes_data = llm_client.chat_json(
         splitting.SYSTEM_PROMPT,
@@ -127,10 +133,10 @@ def run_pipeline(
         }, ensure_ascii=False, indent=2)
 
         user_prompt_3 = generation.USER_PROMPT_TEMPLATE.format(
-            novel_excerpt=novel_excerpt,
-            scene_info=scene_info,
-            characters_json=json.dumps(characters, ensure_ascii=False, indent=2),
-            user_instructions=instructions_str,
+            novel_excerpt=_safe_fmt(novel_excerpt),
+            scene_info=_safe_fmt(scene_info),
+            characters_json=_safe_fmt(json.dumps(characters, ensure_ascii=False, indent=2)),
+            user_instructions=_safe_fmt(instructions_str),
         )
         content_data = llm_client.chat_json(
             generation.SYSTEM_PROMPT,
@@ -153,9 +159,9 @@ def run_pipeline(
     # ── 阶段 4: 格式组装 ──────────────────────────────────
     meta = _build_meta(novel_title, novel_text, instructions)
     user_prompt_4 = assembly.USER_PROMPT_TEMPLATE.format(
-        meta_json=json.dumps(meta, ensure_ascii=False, indent=2),
-        characters_json=json.dumps(characters, ensure_ascii=False, indent=2),
-        scenes_json=json.dumps(scenes, ensure_ascii=False, indent=2),
+        meta_json=_safe_fmt(json.dumps(meta, ensure_ascii=False, indent=2)),
+        characters_json=_safe_fmt(json.dumps(characters, ensure_ascii=False, indent=2)),
+        scenes_json=_safe_fmt(json.dumps(scenes, ensure_ascii=False, indent=2)),
     )
     yaml_text = llm_client.chat(
         assembly.SYSTEM_PROMPT,
@@ -182,6 +188,17 @@ def run_pipeline(
     script_dict.setdefault("meta", meta)
     script_dict.setdefault("characters", characters)
     script_dict.setdefault("scenes", scenes)
+
+    _pct(95, "正在校验剧本格式…")
+
+    # ── Pydantic 校验 ───────────────────────────────────
+    try:
+        validated = ScriptOutput(**script_dict)
+        script_dict = validated.model_dump()
+    except Exception as exc:
+        # 校验失败时仍返回原始数据，但记录错误
+        import sys
+        print(f"[WARNING] Pipeline 输出校验未通过: {exc}", file=sys.stderr)
 
     _pct(100, "剧本生成完成")
 
@@ -298,16 +315,31 @@ def _find_relevant_excerpt(
 
 
 def _generate_char_id(name: str) -> str:
-    """用中文名生成合法角色 ID"""
+    """用中文名生成合法角色 ID（符合 ^CHAR_[A-Z0-9_]+$ 格式）"""
     import unicodedata
-    # 用 Unicode 规范化 + 大写拼音首字母作为后备
-    normalized = unicodedata.normalize("NFKD", name)
-    ascii_part = normalized.encode("ascii", "ignore").decode("ascii")
-    if ascii_part:
+
+    clean = name.strip()
+
+    # 1. 尝试提取已有的 ASCII 字符（英文名、拼音等）
+    normalized = unicodedata.normalize("NFKD", clean)
+    ascii_part = normalized.encode("ascii", "ignore").decode("ascii").strip()
+    if ascii_part and len(ascii_part) >= 2:
         return f"CHAR_{ascii_part.upper().replace(' ', '_')}"
-    # 纯中文名 → 用笔画数作为后缀
-    stroke = sum(ord(c) for c in name) % 10000
-    return f"CHAR_Z{stroke:04d}"
+
+    # 2. 纯中文名：用 Unicode 码位映射到字母，生成可读的短 ID
+    #    每个中文字符映射为 A-Z 的一个字母
+    letters = []
+    for ch in clean:
+        if "一" <= ch <= "鿿":
+            letters.append(chr(ord("A") + (ord(ch) % 26)))
+        elif ch.isascii() and ch.isalpha():
+            letters.append(ch.upper())
+
+    if letters:
+        return f"CHAR_{''.join(letters[:6])}"
+
+    # 3. 绝对兜底（名字全为空或无法识别）
+    return f"CHAR_UNKNOWN_{abs(hash(clean)) % 10000:04d}"
 
 
 def _clean_yaml(yaml_text: str) -> str:

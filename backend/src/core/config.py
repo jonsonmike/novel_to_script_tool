@@ -30,10 +30,10 @@ class Settings:
     LLM_MODEL: str = os.getenv("LLM_MODEL", "deepseek-chat")
     LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "16000"))
 
-    # 存储
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", f"sqlite:///{PROJECT_ROOT / 'data' / 'projects.db'}"
-    )
+    # 存储（未来迁移数据库时使用）
+    # DATABASE_URL: str = os.getenv(
+    #     "DATABASE_URL", f"sqlite:///{PROJECT_ROOT / 'data' / 'projects.db'}"
+    # )
 
     # Schema
     SCHEMA_PATH: Path = PROJECT_ROOT / "docs" / "script_schema.yaml"

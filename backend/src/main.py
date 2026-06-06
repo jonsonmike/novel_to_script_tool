@@ -22,7 +22,10 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:8501",   # Streamlit 默认端口
         "http://localhost:8502",
-
+        "http://localhost:8503",
+        "http://127.0.0.1:8501",
+        "http://127.0.0.1:8502",
+        "http://127.0.0.1:8503",
     ],
     allow_credentials=True,
     allow_methods=["*"],
