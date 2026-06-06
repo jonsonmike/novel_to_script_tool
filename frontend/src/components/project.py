@@ -121,6 +121,9 @@ def render_project_list() -> None:
         st.info("暂无项目，请先创建项目。")
         return
 
+    # ── 删除确认状态 ──────────────────────────────────────
+    confirm_delete = st.session_state.get("confirm_delete", "")
+
     for proj in projects:
         pid = proj.get("project_id", proj.get("id", ""))
         title = proj.get("novel_title", "未命名项目")
@@ -128,7 +131,7 @@ def render_project_list() -> None:
         created = proj.get("created_at", "")
 
         with st.container(border=True):
-            cols = st.columns([3, 1, 1])
+            cols = st.columns([3, 1, 1, 1])
             with cols[0]:
                 st.markdown(f"**{title}**")
                 st.caption(f"ID: {pid}  |  创建: {created}")
@@ -138,3 +141,34 @@ def render_project_list() -> None:
                 if st.button("📂 打开", key=f"open_{pid}"):
                     st.session_state["current_project_id"] = pid
                     st.rerun()
+            with cols[3]:
+                if st.button("🗑️ 删除", key=f"del_{pid}"):
+                    st.session_state["confirm_delete"] = pid
+                    st.rerun()
+
+        # 当前项目需要二次确认
+        if confirm_delete == pid:
+            with st.container(border=True):
+                st.warning(f"⚠️ 确定删除「**{title}**」？此操作不可撤销。")
+                cc1, cc2, _ = st.columns([1, 1, 4])
+                with cc1:
+                    if st.button("✅ 确认删除", key=f"confirm_{pid}", type="primary"):
+                        with st.spinner("删除中…"):
+                            ok, data, err = api.delete_project(pid)
+                        if ok:
+                            st.success(f"✅ 项目「{title}」已删除")
+                            # 如果删除的是当前打开的项目，清除状态
+                            if st.session_state.get("current_project_id") == pid:
+                                st.session_state["current_project_id"] = ""
+                                st.session_state["script_data"] = None
+                                st.session_state["characters"] = []
+                                st.session_state["scenes"] = []
+                                st.session_state["meta"] = {}
+                            st.session_state["confirm_delete"] = ""
+                            st.rerun()
+                        else:
+                            st.error(f"删除失败：{err}")
+                with cc2:
+                    if st.button("❌ 取消", key=f"cancel_{pid}"):
+                        st.session_state["confirm_delete"] = ""
+                        st.rerun()
