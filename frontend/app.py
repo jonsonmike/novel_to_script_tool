@@ -180,25 +180,6 @@ def main() -> None:
                 "```"
             )
 
-        # ── 快速操作 ──────────────────────────────────────
-        st.divider()
-        st.subheader("🚀 快速操作")
-
-        quick_cols = st.columns(3)
-        with quick_cols[0]:
-            if st.button("📁 创建新项目", use_container_width=True):
-                st.session_state["current_page"] = "create"
-                st.rerun()
-        with quick_cols[1]:
-            if st.button("📋 查看项目列表", use_container_width=True):
-                st.session_state["current_page"] = "list"
-                st.rerun()
-        with quick_cols[2]:
-            if project_id:
-                if st.button("⚙️ 转换管理", use_container_width=True):
-                    st.session_state["current_page"] = "convert"
-                    st.rerun()
-
         # ── 使用流程 ──────────────────────────────────────
         st.divider()
         st.subheader("📖 使用流程")
