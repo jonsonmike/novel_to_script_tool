@@ -6,11 +6,14 @@ Pipeline 辅助函数单元测试
 - 角色 ID 生成
 - JSON/YAML 清理
 - 用户指令格式化
+- chat_json 重试机制（mock LLM 调用）
 """
+
+from unittest.mock import patch
 
 import pytest
 
-from src.pipeline.llm_client import _extract_json
+from src.pipeline.llm_client import _extract_json, _append_retry_hint, chat_json
 from src.pipeline.orchestrator import (
     _extract_chapter_map,
     _generate_char_id,
@@ -170,3 +173,134 @@ class TestBuildMeta:
     def test_no_chapters(self):
         meta = _build_meta("短篇", "没有章节标记的文本", {})
         assert meta["adapted_range"] == "全文"
+
+
+class TestAppendRetryHint:
+    """_append_retry_hint 格式测试"""
+
+    def test_appends_error_info(self):
+        """重试提示包含错误信息和修复指引"""
+        original = "请提取角色"
+        result = _append_retry_hint(
+            original,
+            failed_output="...这不是 JSON...",
+            error_msg="Expecting value: line 1 column 1",
+        )
+        assert original in result
+        assert "格式错误" in result
+        assert "Expecting value" in result
+        assert "纯 JSON" in result
+
+    def test_truncates_long_output(self):
+        """上次输出的内容被截断到 300 字符以内"""
+        long_output = "x" * 1000
+        result = _append_retry_hint("prompt", long_output, "error")
+        assert result.count("x") < 500
+
+
+class TestChatJsonRetry:
+    """chat_json 重试机制测试（mock LLM 调用）"""
+
+    VALID_JSON = '{"characters": [{"id": "CHAR_LIN_MO", "name": "林墨"}]}'
+    BAD_JSON = "好的，以下是他角色的列表：林墨，苏晚。"
+
+    def test_succeeds_on_first_attempt(self):
+        """第一次就返回合法 JSON，不触发重试"""
+        call_count = [0]
+
+        def mock_chat(_sys, _usr, **__):
+            call_count[0] += 1
+            return self.VALID_JSON
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            result = chat_json("sys", "user")
+            assert call_count[0] == 1
+            assert result == {"characters": [{"id": "CHAR_LIN_MO", "name": "林墨"}]}
+
+    def test_retries_and_succeeds(self):
+        """第一次返回非法 JSON，重试后返回合法 JSON → 成功"""
+        call_count = [0]
+
+        def mock_chat(_sys, _usr, **__):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return self.BAD_JSON
+            else:
+                return self.VALID_JSON
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            result = chat_json("sys", "user")
+            assert call_count[0] == 2
+            assert result == {"characters": [{"id": "CHAR_LIN_MO", "name": "林墨"}]}
+
+    def test_retries_twice_then_succeeds(self):
+        """前两次都失败，第三次成功 → 用完默认 2 次重试"""
+        call_count = [0]
+
+        def mock_chat(_sys, _usr, **__):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                return self.BAD_JSON
+            else:
+                return self.VALID_JSON
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            result = chat_json("sys", "user")
+            assert call_count[0] == 3
+            assert result == {"characters": [{"id": "CHAR_LIN_MO", "name": "林墨"}]}
+
+    def test_raises_after_all_retries_exhausted(self):
+        """所有尝试都返回非法 JSON → 抛出 RuntimeError"""
+        call_count = [0]
+
+        def mock_chat(_sys, _usr, **__):
+            call_count[0] += 1
+            return self.BAD_JSON
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            with pytest.raises(RuntimeError, match="重试"):
+                chat_json("sys", "user")
+            assert call_count[0] == 3
+
+    def test_custom_max_retries(self):
+        """max_retries=5 时重试 5 次后才报错"""
+        call_count = [0]
+
+        def mock_chat(_sys, _usr, **__):
+            call_count[0] += 1
+            return self.BAD_JSON
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            with pytest.raises(RuntimeError):
+                chat_json("sys", "user", max_retries=5)
+            assert call_count[0] == 6
+
+    def test_retry_prompt_includes_error_info(self):
+        """重试时 prompt 包含上一次的错误原因"""
+        captured_prompts = []
+
+        def mock_chat(_sys, usr, **__):
+            captured_prompts.append(usr)
+            if len(captured_prompts) == 1:
+                return self.BAD_JSON
+            else:
+                return self.VALID_JSON
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            chat_json("sys", "请提取角色")
+            assert captured_prompts[0] == "请提取角色"
+            assert "格式错误" in captured_prompts[1]
+            assert "纯 JSON" in captured_prompts[1]
+
+    def test_code_block_not_counted_as_retry(self):
+        """LLM 返回 ```json {...} ``` 格式 → 第一次就解析成功，不浪费重试"""
+        call_count = [0]
+
+        def mock_chat(_sys, _usr, **__):
+            call_count[0] += 1
+            return '```json\n{"key": "value"}\n```'
+
+        with patch("src.pipeline.llm_client.chat", side_effect=mock_chat):
+            result = chat_json("sys", "user")
+            assert call_count[0] == 1
+            assert result == {"key": "value"}
