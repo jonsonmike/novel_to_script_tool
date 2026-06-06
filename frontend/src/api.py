@@ -98,6 +98,20 @@ def list_projects() -> tuple[bool, list[dict[str, Any]] | None, str | None]:
         return False, None, str(exc)
 
 
+def delete_project(project_id: str) -> tuple[bool, dict[str, Any] | None, str | None]:
+    """DELETE /api/projects/{id} — 删除项目"""
+    try:
+        resp = requests.delete(_url(f"/projects/{project_id}"), timeout=10)
+        resp.raise_for_status()
+        return True, resp.json(), None
+    except requests.ConnectionError:
+        return False, None, "无法连接后端服务"
+    except requests.Timeout:
+        return False, None, "后端服务响应超时"
+    except Exception as exc:
+        return False, None, str(exc)
+
+
 # ═══════════════════════════════════════════════════════════
 # AI 转换
 # ═══════════════════════════════════════════════════════════
