@@ -22,6 +22,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query
 
 from ..core import storage
+from ..models.script import ScriptOutput
 from ..pipeline.orchestrator import run_pipeline
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -211,7 +212,6 @@ def save_script(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="项目不存在")
 
     # Pydantic 完整校验（格式、角色引用、必填字段）
-    from ..models.script import ScriptOutput
     try:
         validated = ScriptOutput(**payload)
         storage.save_script(project_id, validated.model_dump())
