@@ -12,20 +12,22 @@ import yaml
 from .. import api
 
 
-def render_export_panel(project_id: str) -> None:
-    """渲染导出页面"""
+def render_export_panel(project_id: str, cached_script: dict[str, Any] | None = None) -> None:
+    """渲染导出页面。cached_script 为前端 session state 中缓存的剧本（可能是已编辑未保存的版本）。"""
     st.header("📤 导出剧本")
 
     if not project_id:
         st.info("请先在「项目管理」中打开一个项目。")
         return
 
-    # ── 获取剧本数据 ──────────────────────────────────────
-    ok, script_data, err = api.get_script(project_id)
+    # ── 获取剧本数据：优先使用缓存的编辑版本 ──────────────
+    script_data = cached_script
 
-    if not ok:
-        st.error(f"获取剧本失败：{err}")
-        return
+    if not script_data:
+        ok, script_data, err = api.get_script(project_id)
+        if not ok:
+            st.error(f"获取剧本失败：{err}")
+            return
 
     if not script_data:
         st.info("该项目尚未生成剧本。请先在「转换管理」中触发 AI 转换。")
@@ -64,46 +66,30 @@ def render_export_panel(project_id: str) -> None:
     st.divider()
     st.subheader("💾 下载")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if export_format == "yaml":
-            yaml_content = yaml.dump(
-                script_data,
-                allow_unicode=True,
-                default_flow_style=False,
-                sort_keys=False,
-                width=120,
-            )
-            st.download_button(
-                label="⬇️ 下载 YAML 剧本",
-                data=yaml_content,
-                file_name=f"{script_data.get('meta', {}).get('script_title', 'script')}.yaml",
-                mime="application/x-yaml",
-                use_container_width=True,
-            )
-        else:
-            json_content = json.dumps(script_data, ensure_ascii=False, indent=2)
-            st.download_button(
-                label="⬇️ 下载 JSON 剧本",
-                data=json_content,
-                file_name=f"{script_data.get('meta', {}).get('script_title', 'script')}.json",
-                mime="application/json",
-                use_container_width=True,
-            )
-
-    with col2:
-        # 也尝试从后端直接导出
-        ok2, raw, err2 = api.export_script(project_id, format=export_format)
-        if ok2 and raw:
-            ext = "yaml" if export_format == "yaml" else "json"
-            st.download_button(
-                label=f"⬇️ 从后端导出（原始 {export_format.upper()}）",
-                data=raw,
-                file_name=f"{script_data.get('meta', {}).get('script_title', 'script')}_server.{ext}",
-                mime="application/x-yaml" if export_format == "yaml" else "application/json",
-                use_container_width=True,
-            )
+    if export_format == "yaml":
+        yaml_content = yaml.dump(
+            script_data,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+            width=120,
+        )
+        st.download_button(
+            label="⬇️ 下载 YAML 剧本",
+            data=yaml_content,
+            file_name=f"{script_data.get('meta', {}).get('script_title', 'script')}.yaml",
+            mime="application/x-yaml",
+            use_container_width=True,
+        )
+    else:
+        json_content = json.dumps(script_data, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="⬇️ 下载 JSON 剧本",
+            data=json_content,
+            file_name=f"{script_data.get('meta', {}).get('script_title', 'script')}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
 
 def render_script_overview(script_data: dict[str, Any]) -> None:
