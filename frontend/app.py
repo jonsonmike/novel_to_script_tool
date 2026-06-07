@@ -44,6 +44,7 @@ def init_session_state() -> None:
         "characters": [],
         "scenes": [],
         "meta": {},
+        "_last_project_id": "",  # 用于检测项目切换，清除旧缓存
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -148,6 +149,15 @@ def main() -> None:
 
     page = st.session_state.get("current_page", "dashboard")
     project_id = st.session_state.get("current_project_id", "")
+
+    # ── 项目切换时清除旧缓存 ────────────────────────────────
+    last_pid = st.session_state.get("_last_project_id", "")
+    if project_id != last_pid:
+        st.session_state["script_data"] = None
+        st.session_state["characters"] = []
+        st.session_state["scenes"] = []
+        st.session_state["meta"] = {}
+        st.session_state["_last_project_id"] = project_id
 
     # ── Dashboard / 系统概览 ───────────────────────────────
     if page == "dashboard":
