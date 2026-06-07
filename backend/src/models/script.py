@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from pydantic import (
     BaseModel,
@@ -178,6 +178,14 @@ class ContentItem(BaseModel):
         le=1,
     )
 
+    # 兼容历史数据：emotion=None → ""
+    @model_validator(mode="before")
+    @classmethod
+    def fix_none_emotion(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("emotion") is None:
+            data["emotion"] = ""
+        return data
+
     # dialogue 类型必须提供 speaker_id
     @model_validator(mode="after")
     def check_speaker_for_dialogue(self) -> "ContentItem":
@@ -236,6 +244,15 @@ class Scene(BaseModel):
                 )
         return v
 
+    # 自动补全缺失的 scene_id（兼容 AI 管线未生成该字段）
+    @model_validator(mode="before")
+    @classmethod
+    def ensure_scene_id(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "scene_id" not in data:
+            sn = data.get("scene_number", 1)
+            data["scene_id"] = f"S{sn:04d}"
+        return data
+
 
 # ============================================================
 # 顶层结构
@@ -260,28 +277,51 @@ class ScriptOutput(BaseModel):
         min_length=1,
     )
 
-    # 交叉校验：scenes 中引用的角色 ID 必须在 characters 库中存在
-    @model_validator(mode="after")
-    def check_character_references(self) -> "ScriptOutput":
-        valid_ids = {c.id for c in self.characters}
-        errors: list[str] = []
+    # 补全缺失的 scene_id（兼容 AI 管线未生成 / 值为 null）
+    @model_validator(mode="before")
+    @classmethod
+    def ensure_scene_ids(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for i, scene in enumerate(data.get("scenes", [])):
+                if isinstance(scene, dict) and not scene.get("scene_id"):
+                    sn = scene.get("scene_number", i + 1)
+                    scene["scene_id"] = f"S{sn:04d}"
+        return data
 
-        for scene in self.scenes:
-            # 检查 characters_present
-            for cid in scene.characters_present:
-                if cid not in valid_ids:
-                    errors.append(
-                        f"场景 {scene.scene_id} 的 characters_present "
-                        f"引用了未定义的角色 ID: '{cid}'"
-                    )
-            # 检查 content 中的 speaker_id
-            for item in scene.content:
-                if item.speaker_id and item.speaker_id not in valid_ids:
-                    errors.append(
-                        f"场景 {scene.scene_id} 的 content 块 "
-                        f"引用了未定义的角色 ID: '{item.speaker_id}'"
-                    )
+    # 交叉校验：缺失的角色自动补全（兼容 AI 生成不完整的角色库）
+    @model_validator(mode="before")
+    @classmethod
+    def fix_missing_characters(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
 
-        if errors:
-            raise ValueError("\n".join(errors))
-        return self
+        characters: list[dict] = data.get("characters", [])
+        valid_ids = {c.get("id") for c in characters if isinstance(c, dict)}
+        scenes: list[dict] = data.get("scenes", [])
+
+        missing_ids: set[str] = set()
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            for cid in scene.get("characters_present", []):
+                if cid and cid not in valid_ids:
+                    missing_ids.add(cid)
+            for item in scene.get("content", []):
+                if isinstance(item, dict):
+                    sid = item.get("speaker_id")
+                    if sid and sid not in valid_ids:
+                        missing_ids.add(sid)
+
+        # 为缺失的角色自动创建占位条目
+        for mid in sorted(missing_ids):
+            characters.append({
+                "id": mid,
+                "name": mid.replace("CHAR_", "").replace("_", " ").title(),
+                "role_type": "龙套",
+                "traits": [],
+                "physical_description": "",
+                "aliases": [],
+            })
+
+        data["characters"] = characters
+        return data

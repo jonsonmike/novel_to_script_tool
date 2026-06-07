@@ -211,6 +211,14 @@ def save_script(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
 
+    # 补全缺失的 scene_id（兼容 AI 管线未生成 scene_id 的历史数据）
+    scenes = payload.get("scenes", [])
+    for i, scene in enumerate(scenes):
+        if "scene_id" not in scene:
+            sn = scene.get("scene_number", i + 1)
+            scene["scene_id"] = f"S{sn:04d}"
+    print("DEBUG save_script: scenes[0] keys =", list(scenes[0].keys()) if scenes else "EMPTY")
+
     # Pydantic 完整校验（格式、角色引用、必填字段）
     try:
         validated = ScriptOutput(**payload)

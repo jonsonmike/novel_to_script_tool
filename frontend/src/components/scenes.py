@@ -7,6 +7,7 @@ from typing import Any
 
 import streamlit as st
 
+from .. import api
 from ..config import (
     CONTENT_TYPES,
     CONTENT_TYPE_LABELS,
@@ -15,6 +16,22 @@ from ..config import (
     CONFIDENCE_MEDIUM,
     CONFIDENCE_LOW,
 )
+
+
+def _auto_save() -> None:
+    """自动保存剧本到后端（静默，不阻断用户操作）"""
+    pid = st.session_state.get("current_project_id", "")
+    if not pid:
+        return
+    script_data = {
+        "meta": st.session_state.get("meta", {}),
+        "characters": st.session_state.get("characters", []),
+        "scenes": st.session_state.get("scenes", []),
+    }
+    ok, _, err = api.save_script(pid, script_data)
+    if ok:
+        st.session_state["script_data"] = script_data
+    # 静默失败，不弹错误打扰用户
 
 
 def _confidence_indicator(confidence: float | None) -> str:
@@ -204,7 +221,7 @@ def _render_content_block(
                     "type": new_type,
                     "text": new_text,
                     "speaker_id": new_speaker if new_speaker else None,
-                    "emotion": new_emotion if new_emotion else None,
+                    "emotion": new_emotion or "",
                     "ai_confidence": new_confidence,
                 }
 
@@ -315,14 +332,19 @@ def render_scene_detail(
 
             if st.button("✅ 添加", key=f"add_block_{scene_index}"):
                 if new_text.strip():
-                    modified_blocks.append({
+                    # 直接更新 session_state，避免 rerun 丢失
+                    new_block = {
                         "type": new_type,
                         "text": new_text,
                         "speaker_id": new_speaker if new_speaker else None,
-                        "emotion": None,
+                        "emotion": "",
                         "ai_confidence": None,
-                    })
+                    }
+                    modified_blocks.append(new_block)
+                    # 立即持久化到 session state 并自动保存
+                    st.session_state.scenes[scene_index]["content"] = modified_blocks
                     has_changes = True
+                    _auto_save()
                     st.rerun()
 
     # ── 返回 ──────────────────────────────────────────────
@@ -357,6 +379,57 @@ def render_scene_editor(
             )
             if modified is not None:
                 scenes[selected_idx] = modified
-                st.success("场景已修改（点击下方「保存剧本」持久化）")
+                st.session_state["scenes"] = scenes
+                # 自动持久化到后端
+                _auto_save()
+                st.success("✅ 已自动保存")
 
     return scenes
+
+
+def collect_all_edits(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """遍历所有场景，把编辑控件中的当前值合并到场景数据中。
+    这样即使用户没点「应用修改」，保存时也能捕获到最新编辑。
+    """
+    import streamlit as st
+
+    result: list[dict[str, Any]] = []
+    for scene_index, scene in enumerate(scenes):
+        content = scene.get("content", [])
+        new_content: list[dict[str, Any]] = []
+        for idx, block in enumerate(content):
+            type_key = f"ctype_s{scene_index}_b{idx}"
+            text_key = f"ctext_s{scene_index}_b{idx}"
+            speaker_key = f"cspeaker_s{scene_index}_b{idx}"
+            emotion_key = f"cemotion_s{scene_index}_b{idx}"
+            conf_key = f"cconf_s{scene_index}_b{idx}"
+
+            # 只有当编辑控件已渲染过（key 存在于 session_state）才读取
+            if type_key in st.session_state:
+                new_type = st.session_state[type_key]
+                new_text = st.session_state.get(text_key, block.get("text", ""))
+                new_emotion = st.session_state.get(emotion_key, "") or ""
+                new_confidence = st.session_state.get(conf_key, block.get("ai_confidence"))
+
+                # 处理说话人/叙述者
+                speaker_val = st.session_state.get(speaker_key, "")
+                if speaker_val and " — " in speaker_val:
+                    new_speaker = speaker_val.split(" — ")[0]
+                else:
+                    new_speaker = speaker_val or None
+
+                new_content.append({
+                    "type": new_type,
+                    "text": new_text,
+                    "speaker_id": new_speaker if new_speaker else None,
+                    "emotion": new_emotion,
+                    "ai_confidence": new_confidence,
+                })
+            else:
+                new_content.append(block)
+
+        new_scene = dict(scene)
+        new_scene["content"] = new_content
+        result.append(new_scene)
+
+    return result

@@ -159,6 +159,12 @@ def run_pipeline(
 
     _pct(90, "内容生成完毕，正在组装剧本…")
 
+    # 确保每个场景有 scene_id（AI 可能不生成该字段）
+    for i, scene in enumerate(scenes):
+        if "scene_id" not in scene:
+            sn = scene.get("scene_number", i + 1)
+            scene["scene_id"] = f"S{sn:04d}"
+
     # ── 阶段 4: 格式组装 ──────────────────────────────────
     meta = _build_meta(novel_title, novel_text, instructions)
     user_prompt_4 = assembly.USER_PROMPT_TEMPLATE.format(
