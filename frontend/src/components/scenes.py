@@ -315,13 +315,17 @@ def render_scene_detail(
 
             if st.button("✅ 添加", key=f"add_block_{scene_index}"):
                 if new_text.strip():
-                    modified_blocks.append({
+                    # 直接更新 session_state，避免 rerun 丢失
+                    new_block = {
                         "type": new_type,
                         "text": new_text,
                         "speaker_id": new_speaker if new_speaker else None,
                         "emotion": None,
                         "ai_confidence": None,
-                    })
+                    }
+                    modified_blocks.append(new_block)
+                    # 立即持久化到 session state
+                    st.session_state.scenes[scene_index]["content"] = modified_blocks
                     has_changes = True
                     st.rerun()
 
