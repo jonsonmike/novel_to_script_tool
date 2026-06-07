@@ -1,5 +1,7 @@
 # AI 小说转剧本工具
 
+> 🎬 **项目讲解视频**：[点击观看 Bilibili 视频教程](https://www.bilibili.com/video/BV1mFEb66EQA/) — 了解项目背景、架构设计、核心功能演示与使用指南
+
 将 3 章以上的小说文本自动转换为结构化剧本（YAML 格式），降低改编门槛，提升剧本创作效率。
 
 ---
@@ -23,20 +25,20 @@
 
 ```
 ┌──────────────────────┐         ┌──────────────────────┐
-│      前端 (Streamlit) │  HTTP   │     后端 (FastAPI)    │
+│      前端 (Streamlit) │  HTTP  |     后端 (FastAPI)    │
 │                      │◄───────►│                      │
 │  • 项目管理界面       │  REST   │  • 10 个 API 接口     │
-│  • 角色库展示         │  API    │  • Pydantic 数据校验   │
-│  • 场景编辑器         │         │  • AI Pipeline 编排    │
-│  • 剧本导出           │         │  • JSON 文件存储       │
+│  • 角色库展示         │  API    │  • Pydantic 数据校验  │
+│  • 场景编辑器         │         │  • AI Pipeline 编排   │
+│  • 剧本导出           │         │  • JSON 文件存储      │
 └──────────────────────┘         └──────────┬───────────┘
                                             │
                                             │ HTTP (OpenAI 兼容)
                                             ▼
                                  ┌──────────────────────┐
-                                 │     DeepSeek API      │
-                                 │  • deepseek-chat 模型  │
-                                 │  • JSON 模式输出       │
+                                 │     DeepSeek API     │
+                                 │  • deepseek-chat 模型 │
+                                 │  • JSON 模式输出      │
                                  └──────────────────────┘
 ```
 
