@@ -238,60 +238,63 @@ def main() -> None:
             st.subheader("🚀 触发 AI 转换")
             st.caption("将小说文本发送给 DeepSeek AI，生成结构化剧本。")
 
-            if st.button("🤖 开始 AI 转换", type="primary"):
-                with st.spinner("正在提交转换任务…"):
-                    ok, data, err = api.trigger_convert(project_id)
-
-                if ok and data:
-                    task_id = data.get("task_id", "")
-                    st.success(f"✅ 转换任务已提交！任务 ID: {task_id}")
-                    st.session_state["convert_task_id"] = task_id
-                    st.info("转换正在后台进行。请点击下方「刷新进度」查看状态。")
-                else:
-                    st.error(f"提交失败：{err}")
-
-            # 查询进度
             task_id = st.session_state.get("convert_task_id", "")
-            if task_id:
+
+            # 没有任务时显示启动按钮；有任务时显示进度
+            if not task_id:
+                if st.button("🤖 开始 AI 转换", type="primary"):
+                    with st.spinner("正在提交转换任务…"):
+                        ok, data, err = api.trigger_convert(project_id)
+                    if ok and data:
+                        st.session_state["convert_task_id"] = data.get("task_id", "")
+                        st.rerun()
+                    else:
+                        st.error(f"提交失败：{err}")
+            else:
                 st.divider()
                 st.subheader("📊 转换进度")
 
-                if st.button("🔄 刷新进度"):
-                    with st.spinner("查询中…"):
-                        ok, data, err = api.query_task(project_id, task_id)
-                        if ok and data:
-                            status = data.get("status", "unknown")
-                            progress_val = data.get("progress", 0)
-                            st.progress(progress_val / 100 if progress_val else 0)
-                            st.markdown(f"**状态**: {status}")
-                            st.markdown(f"**进度**: {progress_val}%")
-                            if status == "completed":
-                                st.success("🎉 转换完成！请前往「场景编辑」查看结果。")
-                                # 自动加载剧本
-                                ok2, script, _ = api.get_script(project_id)
-                                if ok2 and script:
-                                    st.session_state["script_data"] = script
-                                    st.session_state["characters"] = script.get("characters", [])
-                                    st.session_state["scenes"] = script.get("scenes", [])
-                                    st.session_state["meta"] = script.get("meta", {})
-                        else:
-                            st.warning(f"查询失败：{err}")
+                # 自动轮询后端进度
+                ok, data, err = api.query_task(project_id, task_id)
+                if ok and data:
+                    status = data.get("status", "unknown")
+                    progress_val = data.get("progress", 0)
 
-            # 手动加载剧本
-            st.divider()
-            st.subheader("📥 加载已有剧本")
-            if st.button("📥 从后端加载剧本数据"):
-                with st.spinner("加载中…"):
-                    ok, script, err = api.get_script(project_id)
-                    if ok and script:
-                        st.session_state["script_data"] = script
-                        st.session_state["characters"] = script.get("characters", [])
-                        st.session_state["scenes"] = script.get("scenes", [])
-                        st.session_state["meta"] = script.get("meta", {})
-                        st.success("✅ 剧本数据已加载")
+                    # 实时进度条
+                    st.progress(progress_val / 100 if progress_val else 0)
+                    msg = data.get("message", "")
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        st.metric("进度", f"{progress_val}%")
+                    with col2:
+                        st.metric("状态", status)
+                    if msg:
+                        st.caption(f"💬 {msg}")
+
+                    if status == "completed":
+                        st.success("🎉 转换完成！剧本已生成，请前往「场景编辑」查看。")
+                        st.balloons()
+                        # 自动加载剧本
+                        ok2, script, _ = api.get_script(project_id)
+                        if ok2 and script:
+                            st.session_state["script_data"] = script
+                            st.session_state["characters"] = script.get("characters", [])
+                            st.session_state["scenes"] = script.get("scenes", [])
+                            st.session_state["meta"] = script.get("meta", {})
+                        st.session_state.pop("convert_task_id", None)
                         st.rerun()
+                    elif status == "failed":
+                        st.error(f"❌ 转换失败：{data.get('error', '未知错误')}")
+                        if st.button("🔄 重新转换", use_container_width=True):
+                            st.session_state.pop("convert_task_id", None)
+                            st.rerun()
                     else:
-                        st.warning(f"加载失败：{err or '尚未生成剧本'}")
+                        # 仍在转换中，2 秒后自动刷新
+                        import time
+                        time.sleep(2)
+                        st.rerun()
+                else:
+                    st.warning(f"查询进度失败：{err}")
 
     # ── 角色库 ─────────────────────────────────────────────
     elif page == "characters":
@@ -337,35 +340,8 @@ def main() -> None:
 
             st.divider()
 
-            # 场景编辑器
-            modified_scenes = render_scene_editor(scenes, characters)
-
-            # 保存按钮
-            st.divider()
-            col_save, col_reset = st.columns(2)
-            with col_save:
-                if st.button("💾 保存剧本到后端", type="primary", use_container_width=True):
-                    if project_id:
-                        script_data = {
-                            "meta": st.session_state.get("meta", {}),
-                            "characters": characters,
-                            "scenes": modified_scenes,
-                        }
-                        ok, data, err = api.save_script(project_id, script_data)
-                        if ok:
-                            st.session_state["scenes"] = modified_scenes
-                            st.session_state["script_data"] = script_data
-                            st.success("✅ 剧本已保存")
-                        else:
-                            st.error(f"保存失败：{err}")
-                    else:
-                        st.warning("请先打开一个项目")
-            with col_reset:
-                if st.button("🔄 重新加载", use_container_width=True):
-                    st.session_state["script_data"] = None
-                    st.session_state["characters"] = []
-                    st.session_state["scenes"] = []
-                    st.rerun()
+            # 场景编辑器（编辑内容后自动保存到后端）
+            render_scene_editor(scenes, characters)
 
     # ── 导出 ───────────────────────────────────────────────
     elif page == "export":
@@ -381,7 +357,7 @@ def main() -> None:
                         st.session_state["scenes"] = script.get("scenes", [])
                         st.session_state["meta"] = script.get("meta", {})
 
-            render_export_panel(project_id)
+            render_export_panel(project_id, cached_script=st.session_state.get("script_data"))
         else:
             st.info("请先在「项目列表」中打开一个项目。")
 
