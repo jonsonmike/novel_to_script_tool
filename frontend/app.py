@@ -69,21 +69,6 @@ def render_sidebar() -> None:
         st.divider()
 
         # ── 导航菜单 ──────────────────────────────────────
-        page = st.radio(
-            "📌 导航",
-            options=[
-                "🏠 系统概览",
-                "📁 创建项目",
-                "📋 项目列表",
-                "⚙️ 转换管理",
-                "🎭 角色库",
-                "🎬 场景编辑",
-                "📤 导出剧本",
-            ],
-            key="nav_radio",
-        )
-
-        # 映射到页面标识
         page_map = {
             "🏠 系统概览": "dashboard",
             "📁 创建项目": "create",
@@ -93,7 +78,25 @@ def render_sidebar() -> None:
             "🎬 场景编辑": "scenes",
             "📤 导出剧本": "export",
         }
-        st.session_state["current_page"] = page_map[page]
+        reverse_page_map = {v: k for k, v in page_map.items()}
+        labels = list(page_map.keys())
+
+        # 程序跳转时同步 radio 显示
+        current = st.session_state.get("current_page", "dashboard")
+        expected_label = reverse_page_map.get(current, labels[0])
+        if st.session_state.get("nav_radio", "") != expected_label:
+            st.session_state["nav_radio"] = expected_label
+
+        def on_nav_change():
+            """仅在用户手动切换导航时更新页面"""
+            st.session_state["current_page"] = page_map[st.session_state.nav_radio]
+
+        st.radio(
+            "📌 导航",
+            options=labels,
+            key="nav_radio",
+            on_change=on_nav_change,
+        )
 
         st.divider()
 
